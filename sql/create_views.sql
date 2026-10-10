@@ -433,3 +433,366 @@ LEFT JOIN vw_team_season_profile a
    AND g.away_team = a.team
 
 WHERE g.completed = TRUE;
+
+-- =========================================================
+-- Rolling pregame offensive metrics
+-- Uses ONLY games prior to the current game
+-- =========================================================
+
+CREATE OR REPLACE VIEW vw_team_pregame_offense AS
+
+SELECT
+    game_id,
+    season,
+    week,
+    team,
+    opponent,
+
+    COUNT(*) OVER (
+        PARTITION BY season, team
+        ORDER BY week, game_id
+        ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
+    ) AS prior_games_played,
+
+    ROUND(
+        AVG(yards_per_play) OVER (
+            PARTITION BY season, team
+            ORDER BY week, game_id
+            ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
+        )::numeric,
+        3
+    ) AS pregame_yards_per_play,
+
+    ROUND(
+        AVG(avg_ppa) OVER (
+            PARTITION BY season, team
+            ORDER BY week, game_id
+            ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
+        )::numeric,
+        4
+    ) AS pregame_avg_ppa,
+
+    ROUND(
+        AVG(success_rate) OVER (
+            PARTITION BY season, team
+            ORDER BY week, game_id
+            ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
+        )::numeric,
+        3
+    ) AS pregame_success_rate,
+
+    ROUND(
+        AVG(explosive_play_rate) OVER (
+            PARTITION BY season, team
+            ORDER BY week, game_id
+            ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
+        )::numeric,
+        3
+    ) AS pregame_explosive_play_rate,
+
+    ROUND(
+        AVG(early_down_yards_per_play) OVER (
+            PARTITION BY season, team
+            ORDER BY week, game_id
+            ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
+        )::numeric,
+        3
+    ) AS pregame_early_down_ypp,
+
+    ROUND(
+        AVG(third_down_conversion_rate) OVER (
+            PARTITION BY season, team
+            ORDER BY week, game_id
+            ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
+        )::numeric,
+        3
+    ) AS pregame_third_down_rate
+
+FROM vw_team_game_metrics;
+
+
+-- =========================================================
+-- Rolling pregame defensive metrics
+-- Measures what each defense allowed prior to current game
+-- =========================================================
+
+CREATE OR REPLACE VIEW vw_team_pregame_defense AS
+
+SELECT
+    game_id,
+    season,
+    week,
+
+    opponent AS team,
+    team AS opposing_offense,
+
+    COUNT(*) OVER (
+        PARTITION BY season, opponent
+        ORDER BY week, game_id
+        ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
+    ) AS prior_games_played_defense,
+
+    ROUND(
+        AVG(yards_per_play) OVER (
+            PARTITION BY season, opponent
+            ORDER BY week, game_id
+            ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
+        )::numeric,
+        3
+    ) AS pregame_yards_per_play_allowed,
+
+    ROUND(
+        AVG(avg_ppa) OVER (
+            PARTITION BY season, opponent
+            ORDER BY week, game_id
+            ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
+        )::numeric,
+        4
+    ) AS pregame_avg_ppa_allowed,
+
+    ROUND(
+        AVG(success_rate) OVER (
+            PARTITION BY season, opponent
+            ORDER BY week, game_id
+            ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
+        )::numeric,
+        3
+    ) AS pregame_success_rate_allowed,
+
+    ROUND(
+        AVG(explosive_play_rate) OVER (
+            PARTITION BY season, opponent
+            ORDER BY week, game_id
+            ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
+        )::numeric,
+        3
+    ) AS pregame_explosive_play_rate_allowed,
+
+    ROUND(
+        AVG(early_down_yards_per_play) OVER (
+            PARTITION BY season, opponent
+            ORDER BY week, game_id
+            ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
+        )::numeric,
+        3
+    ) AS pregame_early_down_ypp_allowed,
+
+    ROUND(
+        AVG(third_down_conversion_rate) OVER (
+            PARTITION BY season, opponent
+            ORDER BY week, game_id
+            ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
+        )::numeric,
+        3
+    ) AS pregame_third_down_rate_allowed
+
+FROM vw_team_game_metrics;
+
+
+-- =========================================================
+-- Combined pregame team metrics
+-- =========================================================
+
+CREATE OR REPLACE VIEW vw_team_pregame_metrics AS
+
+SELECT
+    o.game_id,
+    o.season,
+    o.week,
+    o.team,
+    o.opponent,
+
+    -- Number of previous games
+    o.prior_games_played,
+
+    -- Offensive metrics
+    o.pregame_yards_per_play,
+    o.pregame_avg_ppa,
+    o.pregame_success_rate,
+    o.pregame_explosive_play_rate,
+    o.pregame_early_down_ypp,
+    o.pregame_third_down_rate,
+
+    -- Defensive metrics
+    d.pregame_yards_per_play_allowed,
+    d.pregame_avg_ppa_allowed,
+    d.pregame_success_rate_allowed,
+    d.pregame_explosive_play_rate_allowed,
+    d.pregame_early_down_ypp_allowed,
+    d.pregame_third_down_rate_allowed
+
+FROM vw_team_pregame_offense o
+
+LEFT JOIN vw_team_pregame_defense d
+    ON o.game_id = d.game_id
+   AND o.team = d.team;
+
+
+-- =========================================================
+-- Game-level model features
+-- Uses only information available BEFORE each game
+-- =========================================================
+
+CREATE OR REPLACE VIEW vw_game_model_features_v2 AS
+
+SELECT
+    g.game_id,
+    g.season,
+    g.week,
+    g.start_date,
+
+    g.home_team_id,
+    g.home_team,
+
+    g.away_team_id,
+    g.away_team,
+
+    g.home_conference,
+    g.away_conference,
+
+    g.conference_game,
+    g.neutral_site,
+
+    -- Pregame Elo
+    g.home_pregame_elo,
+    g.away_pregame_elo,
+
+    -- =====================================================
+    -- Home offense
+    -- =====================================================
+
+    h.pregame_yards_per_play
+        AS home_off_yards_per_play,
+
+    h.pregame_avg_ppa
+        AS home_off_ppa,
+
+    h.pregame_success_rate
+        AS home_off_success_rate,
+
+    h.pregame_explosive_play_rate
+        AS home_off_explosive_rate,
+
+    h.pregame_early_down_ypp
+        AS home_off_early_down_ypp,
+
+    h.pregame_third_down_rate
+        AS home_off_third_down_rate,
+
+    -- =====================================================
+    -- Home defense
+    -- =====================================================
+
+    h.pregame_yards_per_play_allowed
+        AS home_def_yards_per_play_allowed,
+
+    h.pregame_avg_ppa_allowed
+        AS home_def_ppa_allowed,
+
+    h.pregame_success_rate_allowed
+        AS home_def_success_rate_allowed,
+
+    h.pregame_explosive_play_rate_allowed
+        AS home_def_explosive_rate_allowed,
+
+    h.pregame_early_down_ypp_allowed
+        AS home_def_early_down_ypp_allowed,
+
+    h.pregame_third_down_rate_allowed
+        AS home_def_third_down_rate_allowed,
+
+    -- =====================================================
+    -- Away offense
+    -- =====================================================
+
+    a.pregame_yards_per_play
+        AS away_off_yards_per_play,
+
+    a.pregame_avg_ppa
+        AS away_off_ppa,
+
+    a.pregame_success_rate
+        AS away_off_success_rate,
+
+    a.pregame_explosive_play_rate
+        AS away_off_explosive_rate,
+
+    a.pregame_early_down_ypp
+        AS away_off_early_down_ypp,
+
+    a.pregame_third_down_rate
+        AS away_off_third_down_rate,
+
+    -- =====================================================
+    -- Away defense
+    -- =====================================================
+
+    a.pregame_yards_per_play_allowed
+        AS away_def_yards_per_play_allowed,
+
+    a.pregame_avg_ppa_allowed
+        AS away_def_ppa_allowed,
+
+    a.pregame_success_rate_allowed
+        AS away_def_success_rate_allowed,
+
+    a.pregame_explosive_play_rate_allowed
+        AS away_def_explosive_rate_allowed,
+
+    a.pregame_early_down_ypp_allowed
+        AS away_def_early_down_ypp_allowed,
+
+    a.pregame_third_down_rate_allowed
+        AS away_def_third_down_rate_allowed,
+
+    -- =====================================================
+    -- Useful matchup differences
+    -- =====================================================
+
+    h.pregame_avg_ppa
+        - a.pregame_avg_ppa
+        AS offensive_ppa_diff,
+
+    h.pregame_avg_ppa_allowed
+        - a.pregame_avg_ppa_allowed
+        AS defensive_ppa_allowed_diff,
+
+    h.pregame_success_rate
+        - a.pregame_success_rate
+        AS offensive_success_rate_diff,
+
+    h.pregame_yards_per_play
+        - a.pregame_yards_per_play
+        AS offensive_ypp_diff,
+
+    g.home_pregame_elo
+        - g.away_pregame_elo
+        AS pregame_elo_diff,
+
+    -- =====================================================
+    -- Targets
+    -- These are outcomes, NOT model features
+    -- =====================================================
+
+    g.home_points,
+    g.away_points,
+
+    g.home_point_margin,
+
+    CASE
+        WHEN g.home_points > g.away_points
+            THEN 1
+        ELSE 0
+    END AS home_win
+
+FROM vw_games g
+
+LEFT JOIN vw_team_pregame_metrics h
+    ON g.game_id = h.game_id
+   AND g.home_team = h.team
+
+LEFT JOIN vw_team_pregame_metrics a
+    ON g.game_id = a.game_id
+   AND g.away_team = a.team
+
+WHERE g.completed = TRUE;
