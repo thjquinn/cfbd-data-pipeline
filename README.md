@@ -1,36 +1,44 @@
 # CFBD Data Pipeline
 
-An end-to-end college football data pipeline built with Python, PostgreSQL, and the CollegeFootballData API.
+End-to-end college football data pipeline built with **Python, PostgreSQL, SQL, and the CollegeFootballData API**.
 
-The purpose of this project is to build a production-style data workflow from the ground up rather than working from pre-cleaned CSV files. The pipeline extracts college football data from an external API, validates and transforms it, stores it in a relational PostgreSQL database, maintains existing records with upserts, and orchestrates the full process through a single command.
+The project started as a way to learn the full data lifecycle from raw API ingestion through database design, analytics engineering, and machine learning.
 
-The next phase of the project will build an analytics layer on top of the database for SQL analysis, feature engineering, machine learning, and visualization.
+## Current Status
 
----
+The project now includes:
 
-## Current Version
+- CFBD game and play-by-play ingestion
+- PostgreSQL relational database
+- Primary / foreign keys and indexes
+- Validation, upserts, and pipeline logging
+- Automated pipeline orchestration
+- Historical play-by-play backfill for 2021–2025
+- Reusable SQL analytics views
+- Leakage-safe rolling pregame features
+- Model-ready game-level dataset
+- Baseline machine learning experiments
 
-**v0.0.9**
+### Current baseline model
 
-The core data engineering pipeline is complete and operational.
+**Logistic V1** is the current official baseline.
 
-Current capabilities include:
+| Model | Accuracy | ROC AUC | Log Loss |
+|---|---:|---:|---:|
+| Logistic V1 | **0.7255** | **0.7983** | **0.5335** |
+| Logistic V2 | 0.7213 | 0.7947 | 0.5370 |
 
-- CFBD API ingestion
-- PostgreSQL storage
-- Relational database design
-- Primary and foreign keys
-- Data validation
-- Data transformation
-- Nested JSON serialization
-- Incremental loading
-- PostgreSQL upserts
-- Database indexing
-- Query performance analysis
-- Step-level pipeline logging
-- Master pipeline logging
-- Pipeline orchestration
-- Error and failure logging
+Training uses **2021–2024** and testing uses **2025**.
+
+Logistic V1 uses five pregame features:
+
+- Home offensive PPA
+- Away offensive PPA
+- Home defensive PPA allowed
+- Away defensive PPA allowed
+- Pregame Elo difference
+
+An expanded 17-feature version did not improve performance, so the simpler model remains the baseline.
 
 ---
 
@@ -38,43 +46,29 @@ Current capabilities include:
 
 ```text
 CollegeFootballData API
-          |
-          v
-    Python Extraction
-          |
-          v
-  Validation / Cleaning
-          |
-          v
-     Transformation
-          |
-          v
-      PostgreSQL
-       /      \
-      v        v
-   Games     Plays
-      \        /
-       \      /
-        Teams
-          |
-          v
-  Analytics Layer
-     (next phase)
+        ↓
+Python ingestion
+        ↓
+Validation + transformation
+        ↓
+PostgreSQL
+        ↓
+SQL analytics views
+        ↓
+Rolling pregame features
+        ↓
+Python / ML
 ```
 
-The full pipeline is orchestrated with:
+Main pipeline:
 
 ```text
 run_pipeline.py
-      |
-      v
+    ↓
 load_games.py
-      |
-      v
+    ↓
 load_plays.py
 ```
-
-If an upstream pipeline step fails, downstream steps do not continue.
 
 ---
 
@@ -86,8 +80,7 @@ If an upstream pipeline step fails, downstream steps do not continue.
 - pandas
 - SQLAlchemy
 - psycopg2
-- Requests
-- python-dotenv
+- scikit-learn
 - CollegeFootballData API
 - Git / GitHub
 
@@ -97,44 +90,91 @@ If an upstream pipeline step fails, downstream steps do not continue.
 
 ```text
 cfbd_pipeline/
-|
+├── notebooks/
+│   └── 01_baseline_model.ipynb
 ├── scripts/
 │   ├── load_games.py
 │   ├── load_plays.py
 │   └── run_pipeline.py
-|
 ├── sql/
 │   ├── create_tables.sql
-│   └── create_indexes.sql
-|
-├── .env
+│   ├── create_indexes.sql
+│   └── create_views.sql
 ├── .env.example
 ├── .gitignore
 ├── requirements.txt
 └── README.md
 ```
 
-`.env` contains local credentials and is excluded from Git.
+---
 
-`.env.example` documents the environment variables required to run the project without exposing any credentials.
+## Database
+
+Core tables:
+
+```text
+teams
+games
+plays
+pipeline_runs
+pipeline_master_runs
+```
+
+Important relationships:
+
+```text
+teams.team_id
+    ↑
+games.homeId / games.awayId
+
+games.id
+    ↑
+plays.game_id
+```
+
+The `plays` table contains historical play-by-play data for **2021–2025**.
 
 ---
 
-## Environment Variables
+## Analytics Layer
 
-Create a `.env` file in the project root:
+The SQL layer progressively transforms raw play data into reusable analytical datasets.
+
+Key views include:
 
 ```text
-CFBD_API_KEY=your_api_key
-
-DB_HOST=localhost
-DB_PORT=5432
-DB_NAME=college_football
-DB_USER=postgres
-DB_PASSWORD=your_password
+vw_games
+vw_plays
+vw_team_game_metrics
+vw_team_season_metrics
+vw_team_season_defense_metrics
+vw_team_season_profile
+vw_team_pregame_offense
+vw_team_pregame_defense
+vw_team_pregame_metrics
+vw_game_model_features_v2
 ```
 
-An `.env.example` file can be committed safely:
+`vw_game_model_features_v2` is the current leakage-safe modeling dataset.
+
+Rolling team metrics only use games played **before** the current matchup.
+
+Example:
+
+```text
+Week 1 → no current-season history
+Week 2 → Week 1 only
+Week 3 → Weeks 1–2
+Week 4 → Weeks 1–3
+```
+
+This prevents future information from leaking into historical predictions.
+
+---
+
+## Running the Pipeline
+
+Create a local `.env` file:
 
 ```text
 CFBD_API_KEY=
@@ -145,868 +185,112 @@ DB_USER=postgres
 DB_PASSWORD=
 ```
 
----
-
-## Database Design
-
-The project currently contains the following primary tables.
-
-### `teams`
-
-Stores one record for each college football team.
-
-```text
-teams
------
-team_id             PRIMARY KEY
-school
-classification
-conference
-```
-
-Team IDs originate from CFBD and are referenced by game records.
-
-### `games`
-
-Stores game-level information.
-
-Important fields include:
-
-```text
-games
------
-id                  PRIMARY KEY
-season
-week
-seasonType
-startDate
-completed
-conferenceGame
-
-homeId              FOREIGN KEY -> teams.team_id
-homeTeam
-homeConference
-homePoints
-
-awayId              FOREIGN KEY -> teams.team_id
-awayTeam
-awayConference
-awayPoints
-
-attendance
-venue
-excitementIndex
-...
-```
-
-Each game is uniquely identified by its CFBD game ID.
-
-### `plays`
-
-Stores play-by-play data.
-
-```text
-plays
------
-id                  PRIMARY KEY
-game_id             FOREIGN KEY -> games.id
-
-drive_id
-drive_number
-play_number
-
-offense
-defense
-period
-clock
-
-down
-distance
-yardline
-yards_to_goal
-yards_gained
-
-scoring
-play_type
-play_text
-ppa
-wallclock
-...
-```
-
-The current 2025 play-by-play dataset contains more than 280,000 plays.
-
-### `pipeline_runs`
-
-Tracks individual pipeline executions.
-
-```text
-pipeline_runs
--------------
-run_id
-pipeline_name
-run_timestamp
-rows_pulled
-rows_inserted
-rows_updated
-rows_rejected
-status
-error_message
-```
-
-This provides a persistent history of successful and failed ingestion runs.
-
-### `pipeline_master_runs`
-
-Tracks execution of the entire orchestrated pipeline.
-
-```text
-pipeline_master_runs
---------------------
-run_id
-start_timestamp
-end_timestamp
-status
-completed_steps
-error_message
-```
-
-This makes it possible to distinguish between the performance of individual pipeline steps and the overall workflow.
-
----
-
-## Running the Pipeline
-
-Activate the virtual environment first.
-
-On Windows:
-
-```bash
-.venv\Scripts\activate
-```
-
 Then run:
 
 ```bash
 python scripts/run_pipeline.py
 ```
 
-This executes the pipeline in order:
+The pipeline:
 
-```text
-1. Load / update games
-2. Load / update plays
-3. Log each pipeline step
-4. Log overall pipeline execution
-```
-
-The individual scripts can also still be run independently:
-
-```bash
-python scripts/load_games.py
-```
-
-```bash
-python scripts/load_plays.py
-```
+1. pulls CFBD data
+2. validates and transforms records
+3. inserts new rows
+4. updates existing rows with PostgreSQL upserts
+5. logs step-level and full-pipeline results
 
 ---
 
-## Data Loading Strategy
+## Key Problems Solved
 
-The project initially used full-table loading with `pandas.to_sql()`.
+A few issues encountered while building the project:
 
-The pipeline has since evolved into an incremental upsert architecture.
+### Nested API data
 
-### Initial approach
+CFBD returned dictionaries/lists that PostgreSQL could not insert directly.
 
-```text
-API
- |
- v
-Pull all data
- |
- v
-Replace / append database table
-```
+**Fix:** serialize nested values before loading.
 
-### Current approach
+### Duplicate team IDs
 
-```text
-API
- |
- v
-Pull source data
- |
- v
-Validate
- |
- v
-Transform
- |
- v
-PostgreSQL primary key check
- |
- +------------------+
- |                  |
- v                  v
-New ID          Existing ID
- |                  |
- v                  v
-INSERT             UPDATE
- |                  |
- +--------+---------+
-          |
-          v
-        LOG RUN
-```
+Teams can retain the same ID while conference information changes over time.
 
-PostgreSQL's:
+**Fix:** retain one current team record using PostgreSQL `DISTINCT ON`.
+
+### Duplicate records
+
+Early versions attempted to reload existing rows.
+
+**Fix:** first added incremental inserts, then upgraded to:
 
 ```sql
 ON CONFLICT (id) DO UPDATE
 ```
 
-is used to maintain existing records.
+### Pipeline failures
 
-This is important because CFBD may update previously loaded games as new information becomes available.
+Failures originally existed only in terminal output.
 
-Examples include:
+**Fix:** added persistent step-level and master pipeline logging.
 
-- final scores
-- completion status
-- kickoff information
-- postgame ratings
-- win probabilities
-- other game metadata
+### Data leakage
 
----
+Full-season metrics would allow early-season games to use future information.
 
-## Data Validation
+**Fix:** rolling SQL window functions calculate features using only prior games.
 
-Before data is written to PostgreSQL, required fields are checked.
+### More features did not improve the model
 
-For games, critical fields include:
+A 17-feature logistic regression slightly underperformed the 5-feature baseline.
 
-```text
-id
-season
-homeId
-awayId
-homeTeam
-awayTeam
-```
-
-For plays, critical fields include:
-
-```text
-id
-game_id
-```
-
-Rows missing critical identifiers are rejected rather than loaded into the database.
-
-The number of rejected rows is recorded in `pipeline_runs`.
+**Lesson:** more variables do not necessarily add useful signal.
 
 ---
 
-## Database Indexing
-
-Indexes were added to improve query performance as the play-by-play table grew.
-
-Current examples include:
-
-```sql
-CREATE INDEX idx_plays_game_id
-ON plays(game_id);
-```
-
-```sql
-CREATE INDEX idx_plays_offense
-ON plays(offense);
-```
-
-```sql
-CREATE INDEX idx_plays_defense
-ON plays(defense);
-```
-
-```sql
-CREATE INDEX idx_plays_play_type
-ON plays(play_type);
-```
-
-```sql
-CREATE INDEX idx_games_season
-ON games(season);
-```
-
-```sql
-CREATE INDEX idx_games_season_week
-ON games(season, week);
-```
-
-Query performance was evaluated using:
-
-```sql
-EXPLAIN ANALYZE
-```
-
-This allowed inspection of PostgreSQL execution strategies such as:
+## Development Progress
 
 ```text
-Sequential Scan
-Index Scan
-Bitmap Index Scan
+v0.0.x  Data engineering foundation
+        API ingestion, PostgreSQL, schema design,
+        indexes, upserts, logging, orchestration
+
+v0.1.x  Analytics engineering
+        SQL views, team metrics, rolling pregame features,
+        model-ready dataset
+
+v0.2.x  Modeling
+        Baselines, logistic regression,
+        feature experimentation
 ```
 
 ---
 
-# Issues Encountered and Resolved
-
-Building the pipeline exposed several issues that required debugging and changes to the architecture.
-
-These are documented here because they were an important part of building and understanding the system.
-
-## 1. PostgreSQL Server Was Not Initially Running
-
-### Issue
-
-pgAdmin was installed locally, but attempts to connect to:
-
-```text
-localhost:5432
-```
-
-timed out.
-
-### Cause
-
-pgAdmin is only a graphical management interface. The PostgreSQL database server itself had not been installed.
-
-### Resolution
-
-PostgreSQL Server was installed separately and its Windows service was started.
-
-pgAdmin was then able to connect using:
-
-```text
-Host: localhost
-Port: 5432
-Database: postgres
-User: postgres
-```
-
-This clarified the difference between the PostgreSQL server and pgAdmin.
-
-## 2. Only 2015 Games Appeared in PostgreSQL
-
-### Issue
-
-The API successfully pulled multiple seasons, but PostgreSQL appeared to contain only games from 2015.
-
-### Investigation
-
-Debugging output was added before and after the database load to determine whether the issue occurred during:
-
-```text
-API extraction
-DataFrame concatenation
-Database insertion
-```
-
-The combined pandas DataFrame contained all requested seasons.
-
-### Cause
-
-The database insert was failing before the complete dataset could be written.
-
-This led directly to the next issue.
-
-## 3. PostgreSQL Could Not Insert Python Dictionaries
-
-### Issue
-
-The database load produced:
-
-```text
-psycopg2.ProgrammingError:
-can't adapt type 'dict'
-```
-
-### Cause
-
-Some CFBD API fields contained nested Python structures such as dictionaries and lists.
-
-These objects could not be inserted directly through the original pandas / psycopg2 workflow.
-
-Examples included line score structures and other nested fields.
-
-### Resolution
-
-Nested dictionaries and lists were serialized into JSON strings before loading.
-
-```python
-def serialize_nested(value):
-    if isinstance(value, (dict, list)):
-        return json.dumps(value)
-    return value
-```
-
-This allowed PostgreSQL to store the values safely.
-
-Future versions may move some of these fields to native PostgreSQL `JSONB` types.
-
-## 4. Duplicate Team IDs
-
-### Issue
-
-Building the `teams` table generated:
-
-```text
-duplicate key value violates unique constraint "teams_pkey"
-```
-
-### Cause
-
-The same team ID appeared in multiple seasons with different metadata.
-
-For example, a program's conference affiliation may change while its team ID remains constant.
-
-Therefore `team_id` was stable, while `conference` and `classification` could change over time.
-
-### Resolution
-
-The teams population query uses PostgreSQL:
-
-```sql
-DISTINCT ON (team_id)
-```
-
-with seasons ordered newest-first.
-
-This keeps one current representation of each team.
-
-### Modeling Lesson
-
-A future version could separate these concepts into:
-
-```text
-teams
------
-team_id
-school
-```
-
-and:
-
-```text
-team_seasons
-------------
-team_id
-season
-conference
-classification
-```
-
-This would preserve historical conference membership more accurately.
-
-## 5. Nested Play Clock Objects
-
-### Issue
-
-Inspection of the CFBD play-by-play response showed that `clock` was a nested dictionary instead of a scalar value.
-
-### Resolution
-
-The clock object is serialized into JSON text before database insertion.
-
-This avoided the same dictionary-adaptation issue encountered during the games load.
-
-## 6. Column Rename Caused a KeyError
-
-### Issue
-
-The plays pipeline originally used `gameId` from the API.
-
-The database schema was changed to use consistent snake_case naming:
-
-```text
-game_id
-```
-
-A later line still referenced:
-
-```python
-plays_df["gameId"]
-```
-
-which caused:
-
-```text
-KeyError: 'gameId'
-```
-
-### Resolution
-
-All downstream references were updated to use:
-
-```python
-plays_df["game_id"]
-```
-
-### Lesson
-
-Transformation order matters. Once a column is renamed, every downstream operation must reference the transformed schema.
-
-## 7. Duplicate Primary Keys During Incremental Loading
-
-### Issue
-
-After incremental loading was introduced, the games pipeline correctly reported:
-
-```text
-New games: 0
-```
-
-but then still failed with a duplicate primary key error.
-
-### Cause
-
-The new incremental insert logic had been added, but the old full-table:
-
-```python
-games_df.to_sql(...)
-```
-
-block was still executing afterward.
-
-Therefore the pipeline correctly skipped existing rows and then attempted to insert all rows again.
-
-### Resolution
-
-The old full-table insert was removed.
-
-Only the incremental/upsert load path remains.
-
-## 8. Incremental Inserts Could Not Update Existing Games
-
-### Issue
-
-The first incremental architecture worked by comparing incoming IDs to IDs already stored in PostgreSQL.
-
-If the ID already existed, the row was skipped.
-
-That prevented duplicates, but introduced a new problem.
-
-A game might initially be stored as:
-
-```text
-completed = false
-home_points = null
-away_points = null
-```
-
-and later CFBD might return:
-
-```text
-completed = true
-home_points = 31
-away_points = 24
-```
-
-The existing row would never receive the update.
-
-### Resolution
-
-The pipeline was upgraded to use PostgreSQL upserts:
-
-```sql
-ON CONFLICT (id)
-DO UPDATE
-```
-
-The database can now insert new records and update existing records.
-
-This allows the local database to stay synchronized with changes in the source data.
-
-## 9. Pipeline Failures Were Not Persistently Logged
-
-### Issue
-
-Originally, failures were only visible in the terminal.
-
-Once the terminal session ended, there was no persistent history of what happened.
-
-### Resolution
-
-The `pipeline_runs` table was created.
-
-Each execution records information including:
-
-```text
-pipeline_name
-rows_pulled
-rows_inserted
-rows_updated
-rows_rejected
-status
-error_message
-```
-
-Both successful and failed runs can now be audited directly from PostgreSQL.
-
-## 10. Pipeline Steps Had to Be Run Manually
-
-### Issue
-
-The games and plays ingestion scripts originally required separate commands:
-
-```bash
-python scripts/load_games.py
-```
-
-followed by:
-
-```bash
-python scripts/load_plays.py
-```
-
-This required manual coordination.
-
-### Resolution
-
-A master orchestration script was created:
-
-```bash
-python scripts/run_pipeline.py
-```
-
-The orchestrator starts the pipeline, runs games first, checks for success, runs plays next, and logs the overall result.
-
-If the games pipeline fails, the plays pipeline does not execute.
-
-## 11. Large Play-by-Play Loads
-
-### Issue
-
-The 2025 play dataset contains more than 280,000 records.
-
-Sending very large insert statements at once is less manageable and may increase memory and database load.
-
-### Resolution
-
-Database operations are processed in chunks.
-
-For example:
-
-```python
-chunk_size = 5000
-```
-
-The plays DataFrame is processed batch-by-batch rather than as one massive database operation.
+## Next Steps
+
+Near-term priorities:
+
+- handle Week 1 / early-season missing features with prior-season information
+- test genuinely new feature families rather than more correlated efficiency metrics
+- compare Random Forest and XGBoost against Logistic V1
+- improve probability calibration and evaluation
+- eventually expose predictions and analytics through a dashboard or app
 
 ---
 
-# Example SQL Queries
+## Project Goal
 
-## Games Per Season
+The goal is not simply to maximize prediction accuracy.
 
-```sql
-SELECT
-    season,
-    COUNT(*) AS number_of_games
-FROM games
-GROUP BY season
-ORDER BY season;
-```
-
-## Notre Dame Games
-
-```sql
-SELECT
-    season,
-    week,
-    "homeTeam",
-    "awayTeam",
-    "homePoints",
-    "awayPoints"
-FROM games
-WHERE "homeTeam" = 'Notre Dame'
-   OR "awayTeam" = 'Notre Dame'
-ORDER BY season, week;
-```
-
-## Number of Plays Per Game
-
-```sql
-SELECT
-    g.season,
-    g.week,
-    g."homeTeam",
-    g."awayTeam",
-    COUNT(p.id) AS number_of_plays
-FROM games g
-JOIN plays p
-    ON g.id = p.game_id
-GROUP BY
-    g.season,
-    g.week,
-    g.id,
-    g."homeTeam",
-    g."awayTeam"
-ORDER BY g.season, g.week;
-```
-
-## Notre Dame Play Types
-
-```sql
-SELECT
-    play_type,
-    COUNT(*) AS plays,
-    ROUND(
-        AVG(yards_gained)::numeric,
-        2
-    ) AS avg_yards
-FROM plays
-WHERE offense = 'Notre Dame'
-GROUP BY play_type
-ORDER BY plays DESC;
-```
-
-## Pipeline Run History
-
-```sql
-SELECT *
-FROM pipeline_runs
-ORDER BY run_timestamp DESC;
-```
-
-## Master Pipeline History
-
-```sql
-SELECT *
-FROM pipeline_master_runs
-ORDER BY start_timestamp DESC;
-```
-
----
-
-# Development History
-
-The project has intentionally been built incrementally.
-
-### v0.0.1
-
-Load one season of CFBD game data into PostgreSQL.
-
-### v0.0.2
-
-Load multiple seasons into a single games table.
-
-### v0.0.3
-
-Define the PostgreSQL games schema manually instead of allowing pandas to generate it.
-
-### v0.0.4
-
-Add a relational teams table and foreign-key relationships.
-
-### v0.0.5
-
-Add play-by-play data and connect plays to games.
-
-### v0.0.6
-
-Add indexes and analyze PostgreSQL query performance.
-
-### v0.0.7
-
-Implement incremental loading and pipeline-run logging.
-
-### v0.0.8
-
-Implement validation, PostgreSQL upserts, rejected-row tracking, and failure logging.
-
-### v0.0.9
-
-Add full pipeline orchestration and master-run logging.
-
----
-
-# Next Phase: v0.1.0
-
-The core ingestion infrastructure is now complete.
-
-The next phase will focus on building an analytics layer on top of PostgreSQL.
-
-Planned work includes:
-
-- reusable SQL views
-- analytical SQL queries
-- team-level metrics
-- game-level feature tables
-- play-by-play aggregations
-- EPA / PPA analysis
-- situational football analysis
-- Python analysis directly from PostgreSQL
-- machine-learning-ready datasets
-- visualization and dashboard integration
-
-The long-term architecture is intended to become:
+The project is designed to demonstrate and learn the complete workflow:
 
 ```text
-CFBD API
-   |
-   v
-Data Engineering Pipeline
-   |
-   v
-PostgreSQL
-   |
-   v
-Analytics Layer
-   |
-   +----------------+
-   |                |
-   v                v
-Python / ML      Tableau / App
+API
+→ ingestion
+→ validation
+→ relational database
+→ SQL analytics
+→ feature engineering
+→ machine learning
+→ evaluation
+→ deployment
 ```
-
----
-
-# Project Goals
-
-This project is primarily intended as a learning and portfolio project focused on understanding the complete data lifecycle.
-
-Rather than beginning with a clean dataset, the goal is to gain experience with:
-
-```text
-external APIs
-     |
-     v
-data ingestion
-     |
-     v
-data validation
-     |
-     v
-data transformation
-     |
-     v
-relational modeling
-     |
-     v
-SQL
-     |
-     v
-pipeline maintenance
-     |
-     v
-analytics
-     |
-     v
-machine learning
-```
-
-The project is deliberately being built in small versions so that each component is understood before additional complexity is introduced.
