@@ -19,9 +19,9 @@ The project now includes:
 - Model-ready game-level dataset
 - Baseline machine learning experiments
 
-### Current baseline model
+### Final model
 
-**Logistic V1** is the current official baseline.
+**Logistic V1** is the final model.
 
 | Model | Accuracy | ROC AUC | Log Loss |
 |---|---:|---:|---:|
@@ -38,7 +38,23 @@ Logistic V1 uses five pregame features:
 - Away defensive PPA allowed
 - Pregame Elo difference
 
-An expanded 17-feature version did not improve performance, so the simpler model remains the baseline.
+An expanded 17-feature version did not improve performance, so the simpler model was kept as the final model.
+
+### Try it: Streamlit app
+
+Pick a home and away team and get a win probability (inputs are prefilled and editable):
+
+```bash
+streamlit run app/streamlit_app.py
+```
+
+The app needs no database. It loads `app/model.joblib` and `app/team_ratings.csv`.
+To regenerate both from the database after loading new data:
+
+```bash
+python scripts/train_model.py
+python scripts/export_team_ratings.py
+```
 
 ---
 
@@ -90,6 +106,11 @@ load_plays.py
 
 ```text
 cfbd_pipeline/
+├── app/
+│   ├── streamlit_app.py
+│   ├── model.joblib        # trained Logistic V1
+│   ├── team_ratings.csv    # team inputs snapshot
+│   └── metrics.json
 ├── notebooks/
 │   └── baseline_model.ipynb
 ├── scripts/
@@ -97,6 +118,8 @@ cfbd_pipeline/
 │   ├── load_games.py
 │   ├── load_plays.py
 │   ├── run_pipeline.py
+│   ├── train_model.py
+│   ├── export_team_ratings.py
 │   ├── check_cfbd.py       # smoke check: CFBD API connection
 │   └── check_database.py   # smoke check: PostgreSQL connection
 ├── sql/
@@ -286,7 +309,6 @@ Near-term priorities:
 
 - handle Week 1 / early-season missing features with prior-season information
 - test genuinely new feature families rather than more correlated efficiency metrics
-- compare Random Forest and XGBoost against Logistic V1
 - improve probability calibration and evaluation
 - eventually expose predictions and analytics through a dashboard or app
 
