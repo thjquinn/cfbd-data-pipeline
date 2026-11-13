@@ -91,14 +91,15 @@ load_plays.py
 ```text
 cfbd_pipeline/
 ├── notebooks/
-│   └── 01_baseline_model.ipynb
+│   └── baseline_model.ipynb
 ├── scripts/
 │   ├── load_games.py
 │   ├── load_plays.py
-│   └── run_pipeline.py
+│   ├── run_pipeline.py
+│   ├── test_cfbd.py        # smoke check: CFBD API connection
+│   └── test_database.py    # smoke check: PostgreSQL connection
 ├── sql/
-│   ├── create_tables.sql
-│   ├── create_indexes.sql
+│   ├── create_tables.sql   # tables, keys, and indexes
 │   └── create_views.sql
 ├── .env.example
 ├── .gitignore
@@ -174,7 +175,19 @@ This prevents future information from leaking into historical predictions.
 
 ## Running the Pipeline
 
-Create a local `.env` file:
+Setup:
+
+```bash
+python -m venv .venv
+.venv\Scripts\activate        # Windows (macOS/Linux: source .venv/bin/activate)
+pip install -r requirements.txt
+createdb college_football
+psql -d college_football -f sql/create_tables.sql
+psql -d college_football -f sql/create_views.sql
+```
+
+Get a free API key at [collegefootballdata.com](https://collegefootballdata.com/key).
+Copy `.env.example` to `.env` and fill it in (never commit `.env`):
 
 ```text
 CFBD_API_KEY=
