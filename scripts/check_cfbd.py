@@ -1,31 +1,26 @@
-import os
+"""Smoke check: confirm the CFBD API key works."""
 
 import requests
-from dotenv import load_dotenv
+from config import get_api_headers
 
-load_dotenv()
 
-API_KEY = os.getenv("CFBD_API_KEY")
+def main():
+    response = requests.get(
+        "https://api.collegefootballdata.com/games",
+        headers=get_api_headers(),
+        params={"year": 2025},
+        timeout=60,
+    )
 
-headers = {
-    "Authorization": f"Bearer {API_KEY}"
-}
+    response.raise_for_status()
 
-url = "https://api.collegefootballdata.com/games"
+    games = response.json()
 
-params = {
-    "year": 2025
-}
+    print(f"Games returned: {len(games)}")
 
-response = requests.get(
-    url,
-    headers=headers,
-    params=params
-)
+    if games:
+        print(games[0])
 
-response.raise_for_status()
 
-games = response.json()
-
-print(f"Games returned: {len(games)}")
-print(games[0])
+if __name__ == "__main__":
+    main()

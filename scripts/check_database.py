@@ -1,21 +1,13 @@
-import os
+"""Smoke check: confirm the PostgreSQL connection works."""
 
-from dotenv import load_dotenv
-from sqlalchemy import create_engine, text
+from config import get_engine
+from sqlalchemy import text
 
-load_dotenv()
 
-DB_HOST = os.getenv("DB_HOST")
-DB_PORT = os.getenv("DB_PORT")
-DB_NAME = os.getenv("DB_NAME")
-DB_USER = os.getenv("DB_USER")
-DB_PASSWORD = os.getenv("DB_PASSWORD")
+def main():
+    with get_engine().connect() as connection:
+        print(connection.execute(text("SELECT version();")).fetchone())
 
-engine = create_engine(
-    f"postgresql+psycopg2://{DB_USER}:{DB_PASSWORD}"
-    f"@{DB_HOST}:{DB_PORT}/{DB_NAME}"
-)
 
-with engine.connect() as connection:
-    result = connection.execute(text("SELECT version();"))
-    print(result.fetchone())
+if __name__ == "__main__":
+    main()

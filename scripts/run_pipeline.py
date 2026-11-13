@@ -1,29 +1,14 @@
-import os
 import subprocess
 import sys
 from datetime import datetime
 
 import pandas as pd
-from dotenv import load_dotenv
-from sqlalchemy import create_engine
+from config import get_engine
 
 
 # =========================================================
 # Configuration
 # =========================================================
-
-load_dotenv()
-
-DB_HOST = os.getenv("DB_HOST")
-DB_PORT = os.getenv("DB_PORT")
-DB_NAME = os.getenv("DB_NAME")
-DB_USER = os.getenv("DB_USER")
-DB_PASSWORD = os.getenv("DB_PASSWORD")
-
-engine = create_engine(
-    f"postgresql+psycopg2://{DB_USER}:{DB_PASSWORD}"
-    f"@{DB_HOST}:{DB_PORT}/{DB_NAME}"
-)
 
 PIPELINE_STEPS = [
     {
@@ -58,7 +43,7 @@ def log_master_run(
 
     log_df.to_sql(
         "pipeline_master_runs",
-        engine,
+        get_engine(),
         if_exists="append",
         index=False
     )
@@ -103,6 +88,8 @@ def run_step(step_name, script_path):
 # =========================================================
 
 def main():
+
+    get_engine()  # fail fast if DB settings are missing
 
     pipeline_start = datetime.now()
     completed_steps = []

@@ -93,16 +93,18 @@ cfbd_pipeline/
 ├── notebooks/
 │   └── baseline_model.ipynb
 ├── scripts/
+│   ├── config.py           # shared env/DB/API helpers
 │   ├── load_games.py
 │   ├── load_plays.py
 │   ├── run_pipeline.py
-│   ├── test_cfbd.py        # smoke check: CFBD API connection
-│   └── test_database.py    # smoke check: PostgreSQL connection
+│   ├── check_cfbd.py       # smoke check: CFBD API connection
+│   └── check_database.py   # smoke check: PostgreSQL connection
 ├── sql/
 │   ├── create_tables.sql   # tables, keys, and indexes
 │   └── create_views.sql
 ├── .env.example
 ├── .gitignore
+├── LICENSE
 ├── requirements.txt
 └── README.md
 ```
@@ -307,3 +309,9 @@ API
 → evaluation
 → deployment
 ```
+
+---
+
+## License
+
+MIT. See [LICENSE](LICENSE).
