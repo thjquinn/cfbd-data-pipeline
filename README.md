@@ -42,6 +42,8 @@ An expanded 17-feature version did not improve performance, so the simpler model
 
 ### Try it: Streamlit app
 
+**Live app: https://cfb-win-probability.streamlit.app/**
+
 Pick a home and away team and get a win probability (inputs are prefilled and editable):
 
 ```bash

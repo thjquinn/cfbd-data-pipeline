@@ -54,6 +54,12 @@ with st.expander("Model inputs (prefilled from the latest data, editable)", expa
         f"Prefilled with {season} season averages and each team's most recent Elo. "
         "PPA = predicted points added per play; for defense, lower is better."
     )
+    st.info(
+        "**Want current numbers?** The prefilled values are a snapshot and may be out of date. "
+        "Look up each team's live offensive PPA, defensive PPA allowed, and Elo on "
+        "[collegefootballdata.com/teams](https://collegefootballdata.com/teams), "
+        "then type them into the fields below."
+    )
     c1, c2 = st.columns(2)
     # Keys include team names so values reset when the selection changes.
     home_off = c1.number_input(f"{home} offensive PPA", value=float(h.off_ppa), step=0.01, format="%.3f", key=f"ho_{home}")
@@ -105,6 +111,6 @@ log loss {mt['log_loss']:.3f}. For comparison, always picking the home team is r
   averages, so treat early-season or post-injury situations with caution.
 - Not betting advice.
 
-Data: [CollegeFootballData.com](https://collegefootballdata.com).
+Data: [CollegeFootballData.com](https://collegefootballdata.com). Live team stats: [collegefootballdata.com/teams](https://collegefootballdata.com/teams).
 """
     )
